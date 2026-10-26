@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AWS Architecting Demo - Image Uploader</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+    .header {
+      background: #f8f9fa;
+      padding: 30px;
+      text-align: center;
+    }
+    h1 { color: #333; font-size: 2rem; margin-bottom: 15px; }
+    .metadata {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      font-size: 0.9rem;
+      color: #666;
+    }
+    .metadata span { background: white; padding: 8px 16px; border-radius: 6px; }
+    .content { padding: 40px; }
+    .form {
+      display: grid;
+      gap: 15px;
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+    input[type="file"] {
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+    button {
+      padding: 12px 24px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover { background: #5568d3; }
+    .images { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
+    .image-card {
+      background: #f8f9fa;
+      border-radius: 8px;
+      overflow: hidden;
+      transition: transform 0.2s;
+    }
+    .image-card:hover { transform: translateY(-4px); }
+    .image-card img {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+    }
+    .image-info { padding: 12px; }
+    .image-info p {
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+    .delete-btn {
+      width: 100%;
+      padding: 8px;
+      background: #dc3545;
+      font-size: 0.9rem;
+    }
+    .delete-btn:hover { background: #c82333; }
+    @media (max-width: 600px) {
+      .container { border-radius: 0; }
+      .header { padding: 20px; }
+      h1 { font-size: 1.5rem; }
+      .metadata { flex-direction: column; gap: 10px; }
+      .content { padding: 20px; }
+      .images { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Image Uploader - AWS Storage</h1>
+      <div class="metadata">
+        <span>Region: <strong id="region">Loading...</strong></span>
+        <span>Instance: <strong id="instanceId">Loading...</strong></span>
+      </div>
+    </div>
+    <div class="content">
+      <div class="form">
+        <input type="file" id="imageFile" accept="image/*">
+        <button onclick="uploadImage()">Upload</button>
+      </div>
+      <div class="images" id="imagesList"></div>
+    </div>
+  </div>
+
+  <script>
+    async function loadMetadata() {
+      const res = await fetch('/api/metadata');
+      const data = await res.json();
+      document.getElementById('region').textContent = data.region;
+      document.getElementById('instanceId').textContent = data.instanceId;
+    }
+
+    async function loadImages() {
+      const res = await fetch('/api/images');
+      const images = await res.json();
+      document.getElementById('imagesList').innerHTML = images.map(img => `
+        <div class="image-card">
+          <img src="${img.url}" alt="${img.name}">
+          <div class="image-info">
+            <p><strong>${img.name}</strong></p>
+            <p>${(img.size / 1024).toFixed(1)} KB</p>
+            <button class="delete-btn" onclick="deleteImage('${img.name}')">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function uploadImage() {
+      const file = document.getElementById('imageFile').files[0];
+      if (!file) return alert('Please select an image');
+      const formData = new FormData();
+      formData.append('image', file);
+      await fetch('/api/images', { method: 'POST', body: formData });
+      document.getElementById('imageFile').value = '';
+      loadImages();
+    }
+
+    async function deleteImage(name) {
+      await fetch(`/api/images/${name}`, { method: 'DELETE' });
+      loadImages();
+    }
+
+    loadMetadata();
+    loadImages();
+  </script>
+</body>
+</html>
