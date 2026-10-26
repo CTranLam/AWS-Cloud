@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory Management</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+    .header {
+      background: #f8f9fa;
+      padding: 30px;
+      text-align: center;
+    }
+    h1 {
+      color: #333;
+      font-size: 2rem;
+      margin-bottom: 15px;
+    }
+    .metadata {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      font-size: 0.9rem;
+      color: #666;
+      margin-bottom: 15px;
+    }
+    .metadata span { background: white; padding: 8px 16px; border-radius: 6px; }
+    .stress-control {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      align-items: center;
+    }
+    .stress-control input {
+      width: 80px;
+      padding: 6px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+    }
+    .stress-btn {
+      padding: 6px 16px;
+      background: #ff6b6b;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .stress-btn:hover { background: #ee5a52; }
+    .stop-btn { background: #28a745; }
+    .stop-btn:hover { background: #218838; }
+    .content { padding: 40px; }
+    .form {
+      display: grid;
+      gap: 15px;
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+    input {
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border 0.3s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    button {
+      padding: 12px 24px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover { background: #5568d3; }
+    .products {
+      display: grid;
+      gap: 15px;
+    }
+    .product {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      transition: transform 0.2s;
+    }
+    .product:hover { transform: translateY(-2px); }
+    .product-info h3 { color: #333; margin-bottom: 5px; }
+    .product-info p { color: #666; }
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+    .edit-btn {
+      padding: 8px 16px;
+      background: #28a745;
+      font-size: 0.9rem;
+    }
+    .edit-btn:hover { background: #218838; }
+    .delete-btn {
+      padding: 8px 16px;
+      background: #dc3545;
+      font-size: 0.9rem;
+    }
+    .delete-btn:hover { background: #c82333; }
+    @media (max-width: 600px) {
+      .container { border-radius: 0; }
+      .header { padding: 20px; }
+      h1 { font-size: 1.5rem; }
+      .metadata { flex-direction: column; gap: 10px; }
+      .content { padding: 20px; }
+      .product { flex-direction: column; gap: 10px; }
+      .actions { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Inventory Management</h1>
+      <div class="metadata">
+        <span>Region: <strong id="region">Loading...</strong></span>
+        <span>Instance: <strong id="instanceId">Loading...</strong></span>
+      </div>
+      <div class="stress-control">
+        <input type="number" id="stressDuration" value="60" min="10" max="300">
+        <span>seconds</span>
+        <button class="stress-btn" onclick="startStress()">Start CPU Stress</button>
+        <button class="stress-btn stop-btn" onclick="stopStress()">Stop</button>
+      </div>
+    </div>
+    <div class="content">
+      <div class="form">
+        <input type="text" id="name" placeholder="Product Name" required>
+        <input type="number" id="qty" placeholder="Quantity" required min="0">
+        <button id="submitBtn" onclick="addProduct()">Add Product</button>
+      </div>
+      <div class="products" id="products"></div>
+    </div>
+  </div>
+
+  <script>
+    let editingId = null;
+    let stressRunning = false;
+
+    async function loadMetadata() {
+      try {
+        const res = await fetch('/api/metadata');
+        const data = await res.json();
+        document.getElementById('region').textContent = data.region;
+        document.getElementById('instanceId').textContent = data.instanceId;
+      } catch (err) {
+        console.error('Failed to load metadata:', err);
+      }
+    }
+
+    function updateStressButtons() {
+      const startBtn = document.querySelector('.stress-btn:not(.stop-btn)');
+      const stopBtn = document.querySelector('.stop-btn');
+      const durationInput = document.getElementById('stressDuration');
+      
+      if (stressRunning) {
+        startBtn.disabled = true;
+        startBtn.style.opacity = '0.5';
+        startBtn.style.cursor = 'not-allowed';
+        stopBtn.disabled = false;
+        stopBtn.style.opacity = '1';
+        stopBtn.style.cursor = 'pointer';
+        durationInput.disabled = true;
+      } else {
+        startBtn.disabled = false;
+        startBtn.style.opacity = '1';
+        startBtn.style.cursor = 'pointer';
+        stopBtn.disabled = true;
+        stopBtn.style.opacity = '0.5';
+        stopBtn.style.cursor = 'not-allowed';
+        durationInput.disabled = false;
+      }
+    }
+
+    async function startStress() {
+      if (stressRunning) return;
+      
+      const duration = document.getElementById('stressDuration').value;
+      try {
+        const res = await fetch('/api/stress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ duration: parseInt(duration) })
+        });
+        const data = await res.json();
+        
+        if (data.status === 'started') {
+          stressRunning = true;
+          updateStressButtons();
+          alert(`CPU stress started for ${duration} seconds`);
+          
+          // Auto-disable after duration
+          setTimeout(() => {
+            stressRunning = false;
+            updateStressButtons();
+          }, duration * 1000);
+        } else {
+          alert('CPU stress already running');
+        }
+      } catch (err) {
+        alert('Failed to start stress test');
+      }
+    }
+
+    async function stopStress() {
+      if (!stressRunning) return;
+      
+      try {
+        const res = await fetch('/api/stress', { method: 'DELETE' });
+        const data = await res.json();
+        stressRunning = false;
+        updateStressButtons();
+        alert(`CPU stress ${data.status}`);
+      } catch (err) {
+        alert('Failed to stop stress test');
+      }
+    }
+
+    async function loadProducts() {
+      const res = await fetch('/api/products');
+      const products = await res.json();
+      document.getElementById('products').innerHTML = products.map(p => `
+        <div class="product">
+          <div class="product-info">
+            <h3>${p.name}</h3>
+            <p>Quantity: ${p.qty}</p>
+          </div>
+          <div class="actions">
+            <button class="edit-btn" onclick="editProduct(${p.id}, '${p.name}', ${p.qty})">Edit</button>
+            <button class="delete-btn" onclick="deleteProduct(${p.id})">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function addProduct() {
+      const name = document.getElementById('name').value;
+      const qty = document.getElementById('qty').value;
+      if (!name || !qty) return alert('Please fill all fields');
+
+      if (editingId) {
+        await fetch(`/api/products/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, qty: parseInt(qty) })
+        });
+        editingId = null;
+        document.getElementById('submitBtn').textContent = 'Add Product';
+      } else {
+        await fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, qty: parseInt(qty) })
+        });
+      }
+
+      document.getElementById('name').value = '';
+      document.getElementById('qty').value = '';
+      loadProducts();
+    }
+
+    function editProduct(id, name, qty) {
+      editingId = id;
+      document.getElementById('name').value = name;
+      document.getElementById('qty').value = qty;
+      document.getElementById('submitBtn').textContent = 'Update Product';
+    }
+
+    async function deleteProduct(id) {
+      if (!confirm('Delete this product?')) return;
+      await fetch(`/api/products/${id}`, { method: 'DELETE' });
+      loadProducts();
+    }
+
+    loadMetadata();
+    loadProducts();
+    updateStressButtons();
+  </script>
+</body>
+</html>
