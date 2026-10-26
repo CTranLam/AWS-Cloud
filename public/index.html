@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory Management</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 40px;
+    }
+    h1 { color: #333; margin-bottom: 30px; text-align: center; font-size: 2rem; }
+    .form {
+      display: grid;
+      gap: 15px;
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+    input[type="text"], input[type="number"] {
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border 0.3s;
+      width: 100%;
+    }
+    input:focus { outline: none; border-color: #667eea; }
+    .file-input-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    input[type="file"] {
+      padding: 8px;
+      border: 2px dashed #e0e0e0;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      flex: 1;
+      cursor: pointer;
+    }
+    #imagePreview {
+      width: 60px;
+      height: 60px;
+      object-fit: cover;
+      border-radius: 8px;
+      display: none;
+      border: 2px solid #e0e0e0;
+    }
+    button {
+      padding: 12px 24px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover { background: #5568d3; }
+    button:disabled { background: #aaa; cursor: not-allowed; }
+    .products { display: grid; gap: 15px; }
+    .product {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      transition: transform 0.2s;
+      gap: 15px;
+    }
+    .product:hover { transform: translateY(-2px); }
+    .product-image {
+      width: 70px;
+      height: 70px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 2px solid #e0e0e0;
+      flex-shrink: 0;
+    }
+    .product-image-placeholder {
+      width: 70px;
+      height: 70px;
+      border-radius: 8px;
+      background: #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #999;
+      font-size: 1.5rem;
+      flex-shrink: 0;
+    }
+    .product-info { flex: 1; }
+    .product-info h3 { color: #333; margin-bottom: 5px; }
+    .product-info p { color: #666; }
+    .actions { display: flex; gap: 10px; flex-shrink: 0; }
+    .edit-btn { padding: 8px 16px; background: #28a745; font-size: 0.9rem; }
+    .edit-btn:hover { background: #218838; }
+    .delete-btn { padding: 8px 16px; background: #dc3545; font-size: 0.9rem; }
+    .delete-btn:hover { background: #c82333; }
+    .upload-status { font-size: 0.85rem; color: #666; }
+    @media (max-width: 600px) {
+      .container { padding: 20px; }
+      h1 { font-size: 1.5rem; }
+      .product { flex-direction: column; align-items: flex-start; }
+      .actions { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Inventory Management</h1>
+    <div class="form">
+      <input type="text" id="name" placeholder="Product Name" required>
+      <input type="number" id="qty" placeholder="Quantity" required min="0">
+      <div class="file-input-wrapper">
+        <input type="file" id="imageFile" accept="image/*" onchange="previewImage(this)">
+        <img id="imagePreview" alt="preview">
+      </div>
+      <span class="upload-status" id="uploadStatus"></span>
+      <button id="submitBtn" onclick="submitProduct()">Add Product</button>
+    </div>
+    <div class="products" id="products"></div>
+  </div>
+
+  <script>
+    let editingId = null;
+    let pendingImageKey = null;
+
+    function previewImage(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const preview = document.getElementById('imagePreview');
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = 'block';
+      pendingImageKey = null;
+    }
+
+    async function uploadImage() {
+      const file = document.getElementById('imageFile').files[0];
+      if (!file) return null;
+      document.getElementById('uploadStatus').textContent = 'Uploading image...';
+      const res = await fetch(`/api/upload-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`);
+      const { url, key } = await res.json();
+      await fetch(url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      document.getElementById('uploadStatus').textContent = 'Image uploaded.';
+      return key;
+    }
+
+    async function loadProducts() {
+      const res = await fetch('/api/products');
+      const products = await res.json();
+      const container = document.getElementById('products');
+      container.innerHTML = '';
+      for (const p of products) {
+        const div = document.createElement('div');
+        div.className = 'product';
+
+        let imgHtml;
+        if (p.image_url) {
+          const imgRes = await fetch(`/api/image-url?key=${encodeURIComponent(p.image_url)}`);
+          const { url } = await imgRes.json();
+          imgHtml = `<img class="product-image" src="${url}" alt="${escapeHtml(p.name)}">`;
+        } else {
+          imgHtml = `<div class="product-image-placeholder">📦</div>`;
+        }
+
+        div.innerHTML = `
+          ${imgHtml}
+          <div class="product-info">
+            <h3>${escapeHtml(p.name)}</h3>
+            <p>Quantity: ${p.qty}</p>
+          </div>
+          <div class="actions">
+            <button class="edit-btn" data-id="${p.id}" data-name="${escapeAttr(p.name)}" data-qty="${p.qty}" data-key="${p.image_url || ''}">Edit</button>
+            <button class="delete-btn" data-id="${p.id}">Delete</button>
+          </div>
+        `;
+        container.appendChild(div);
+      }
+
+      container.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => editProduct(btn.dataset.id, btn.dataset.name, btn.dataset.qty, btn.dataset.key));
+      });
+      container.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteProduct(btn.dataset.id));
+      });
+    }
+
+    async function submitProduct() {
+      const name = document.getElementById('name').value.trim();
+      const qty = document.getElementById('qty').value;
+      if (!name || qty === '') return alert('Please fill all fields');
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+
+      let imageKey = pendingImageKey;
+      if (document.getElementById('imageFile').files[0]) {
+        imageKey = await uploadImage();
+      }
+
+      const body = { name, qty: parseInt(qty), image_url: imageKey || undefined };
+
+      if (editingId) {
+        await fetch(`/api/products/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        editingId = null;
+        btn.textContent = 'Add Product';
+      } else {
+        await fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      }
+
+      document.getElementById('name').value = '';
+      document.getElementById('qty').value = '';
+      document.getElementById('imageFile').value = '';
+      document.getElementById('imagePreview').style.display = 'none';
+      document.getElementById('uploadStatus').textContent = '';
+      pendingImageKey = null;
+      btn.disabled = false;
+      loadProducts();
+    }
+
+    function editProduct(id, name, qty, imageKey) {
+      editingId = id;
+      pendingImageKey = imageKey || null;
+      document.getElementById('name').value = name;
+      document.getElementById('qty').value = qty;
+      document.getElementById('submitBtn').textContent = 'Update Product';
+      document.getElementById('uploadStatus').textContent = imageKey ? 'Current image will be kept unless you select a new one.' : '';
+    }
+
+    async function deleteProduct(id) {
+      if (!confirm('Delete this product?')) return;
+      await fetch(`/api/products/${id}`, { method: 'DELETE' });
+      loadProducts();
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function escapeAttr(str) {
+      return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    loadProducts();
+  </script>
+</body>
+</html>

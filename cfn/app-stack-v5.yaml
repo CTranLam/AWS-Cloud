@@ -1,0 +1,203 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: App Layer - NAT Gateway, ALB, ASG, Launch Template (requires network stack)
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Description: Name of the network stack (network-stack) to import values from
+    Default: network-stack
+  AppPort:
+    Type: Number
+    Default: 3001
+  InstanceType:
+    Type: String
+    Default: t4g.micro
+
+Mappings:
+  RegionMap:
+    ap-southeast-1:
+      ARM64: ami-0b970883ecc6d6a9b
+    ap-northeast-1:
+      ARM64: ami-0d8c40a9e77cd898b
+
+Resources:
+
+  # ?? NAT Gateway ???????????????????????????????????????????????????????????????
+  NATEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NATEIP.AllocationId
+      SubnetId: !ImportValue
+        Fn::Sub: ${NetworkStackName}-PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: inventory-nat
+
+  NATRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !ImportValue
+        Fn::Sub: ${NetworkStackName}-PrivateRTId
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+
+  # ?? ALB ???????????????????????????????????????????????????????????????????????
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub
+        - inventory-alb-${Suffix}
+        - Suffix: !Select
+            - 0
+            - !Split
+              - '-'
+              - !Select
+                - 2
+                - !Split
+                  - /
+                  - !Ref AWS::StackId
+      Scheme: internet-facing
+      Subnets:
+        - !ImportValue
+          Fn::Sub: ${NetworkStackName}-PublicSubnetA
+        - !ImportValue
+          Fn::Sub: ${NetworkStackName}-PublicSubnetB
+      SecurityGroups:
+        - !ImportValue
+          Fn::Sub: ${NetworkStackName}-ALBSecurityGroup
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub
+        - inventory-tg-${Suffix}
+        - Suffix: !Select
+            - 0
+            - !Split
+              - '-'
+              - !Select
+                - 2
+                - !Split
+                  - /
+                  - !Ref AWS::StackId
+      Port: !Ref AppPort
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: ${NetworkStackName}-VPCId
+      TargetType: instance
+      HealthCheckPath: /api/products
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  # ?? Launch Template & ASG ?????????????????????????????????????????????????????
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub
+        - inventory-lt-${Suffix}
+        - Suffix: !Select
+            - 0
+            - !Split
+              - '-'
+              - !Select
+                - 2
+                - !Split
+                  - /
+                  - !Ref AWS::StackId
+      LaunchTemplateData:
+        ImageId: !FindInMap
+          - RegionMap
+          - !Ref AWS::Region
+          - ARM64
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !ImportValue
+            Fn::Sub: ${NetworkStackName}-Ec2InstanceProfile
+        SecurityGroupIds:
+          - !ImportValue
+            Fn::Sub: ${NetworkStackName}-AppSecurityGroup
+        UserData: !Base64
+          Fn::Sub: |
+            #!/bin/bash
+            cat /home/ec2-user/architecting/.env
+
+            TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+
+
+            AWS_REGION=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
+
+            echo "Region: $AWS_REGION"
+
+
+            if [ "$AWS_REGION" == "ap-southeast-1" ]; then
+                S3_BUCKET="inventory-images-e32294d0"
+                DB_HOST="lab17-auroracluster-yz8dszlvx5ac.cluster-cvi6ygywwao2.ap-southeast-1.rds.amazonaws.com"
+            else
+                S3_BUCKET="inventory-images-dr-e32294d0"
+                DB_HOST="lab17-pilot-demo-cluster-1.cluster-cpoomscim9dq.ap-northeast-1.rds.amazonaws.com"
+            fi
+
+            echo "AWS_REGION=$AWS_REGION" >> /home/ec2-user/architecting/.env
+
+            echo "S3_BUCKET=$S3_BUCKET" >> /home/ec2-user/architecting/.env
+
+            echo "DB_HOST=$DB_HOST" >> /home/ec2-user/architecting/.env
+
+
+            systemctl restart demo-app
+
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: NATGateway
+    Properties:
+      AutoScalingGroupName: !Sub
+        - inventory-asg-${Suffix}
+        - Suffix: !Select
+            - 0
+            - !Split
+              - '-'
+              - !Select
+                - 2
+                - !Split
+                  - /
+                  - !Ref AWS::StackId
+      MinSize: '1'
+      MaxSize: '4'
+      DesiredCapacity: '1'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !ImportValue
+          Fn::Sub: ${NetworkStackName}-AppSubnetA
+        - !ImportValue
+          Fn::Sub: ${NetworkStackName}-AppSubnetB
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: inventory-app
+          PropagateAtLaunch: true
+
+Outputs:
+  ALBURL:
+    Description: Application URL
+    Value: !Sub http://${ALB.DNSName}

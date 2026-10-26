@@ -1,0 +1,579 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Inventory App - VPC, ALB, ASG, Aurora PostgreSQL, S3
+
+Parameters:
+  DBName:
+    Type: String
+    Default: demo
+  DBUsername:
+    Type: String
+    Default: dbadmin
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Default: demoPassword
+  AppPort:
+    Type: Number
+    Default: 3001
+
+Mappings:
+  RegionMap:
+    ap-southeast-1:
+      ARM64: ami-0b970883ecc6d6a9b
+    ap-northeast-1:
+      ARM64: ami-0d8c40a9e77cd898b
+  SubnetConfig:
+    VPC:
+      CIDR: 10.0.0.0/16
+    PublicA:
+      CIDR: 10.0.1.0/24
+    PublicB:
+      CIDR: 10.0.2.0/24
+    AppA:
+      CIDR: 10.0.11.0/24
+    AppB:
+      CIDR: 10.0.12.0/24
+    DBA:
+      CIDR: 10.0.21.0/24
+    DBB:
+      CIDR: 10.0.22.0/24
+
+Resources:
+
+  # ?? VPC ??????????????????????????????????????????????????????????????????????
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - VPC
+        - CIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: inventory-vpc
+
+  IGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: inventory-igw
+
+  IGWAttach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref IGW
+
+  # ?? Subnets ???????????????????????????????????????????????????????????????????
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - PublicA
+        - CIDR
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: public-a
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - PublicB
+        - CIDR
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ''
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: public-b
+
+  AppSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - AppA
+        - CIDR
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: app-a
+
+  AppSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - AppB
+        - CIDR
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: app-b
+
+  DBSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - DBA
+        - CIDR
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: db-a
+
+  DBSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - DBB
+        - CIDR
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: db-b
+
+  # ?? NAT Gateway (single, AZ-a) ????????????????????????????????????????????????
+  NATEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: IGWAttach
+    Properties:
+      Domain: vpc
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NATEIP.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: inventory-nat
+
+  # ?? Route Tables ??????????????????????????????????????????????????????????????
+  PublicRT:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: public-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: IGWAttach
+    Properties:
+      RouteTableId: !Ref PublicRT
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IGW
+
+  PublicSubnetARTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRT
+
+  PublicSubnetBRTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRT
+
+  PrivateRT:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: private-rt
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRT
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+
+  AppSubnetARTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnetA
+      RouteTableId: !Ref PrivateRT
+
+  AppSubnetBRTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnetB
+      RouteTableId: !Ref PrivateRT
+
+  DBSubnetARTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DBSubnetA
+      RouteTableId: !Ref PrivateRT
+
+  DBSubnetBRTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DBSubnetB
+      RouteTableId: !Ref PrivateRT
+
+  # ?? Security Groups ???????????????????????????????????????????????????????????
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB - allow HTTP from internet
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: alb-sg
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: App EC2 - allow from ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref AppPort
+          ToPort: !Ref AppPort
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: app-sg
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Aurora - allow from App
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+      Tags:
+        - Key: Name
+          Value: db-sg
+
+  # ?? S3 Bucket ?????????????????????????????????????????????????????????????????
+  ImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub
+        - inventory-images-${Suffix}
+        - Suffix: !Select
+            - 0
+            - !Split
+              - '-'
+              - !Select
+                - 2
+                - !Split
+                  - /
+                  - !Ref AWS::StackId
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3600
+
+  # ?? IAM Role for EC2 ??????????????????????????????????????????????????????????
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub
+        - inventory-ec2-role-${Suffix}
+        - Suffix: !Select
+            - 0
+            - !Split
+              - '-'
+              - !Select
+                - 2
+                - !Split
+                  - /
+                  - !Ref AWS::StackId
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: S3ImageAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub
+                  - arn:aws:s3:::inventory-images-${Suffix}/products/*
+                  - Suffix: !Select
+                      - 0
+                      - !Split
+                        - '-'
+                        - !Select
+                          - 2
+                          - !Split
+                            - /
+                            - !Ref AWS::StackId
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  # ?? Aurora PostgreSQL ?????????????????????????????????????????????????????????
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Aurora DB subnet group
+      SubnetIds:
+        - !Ref DBSubnetA
+        - !Ref DBSubnetB
+
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Delete
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: '16.6'
+      DatabaseName: !Ref DBName
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DBSecurityGroup
+      StorageEncrypted: true
+      BackupRetentionPeriod: 1
+
+  AuroraInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceIdentifier: my-aurora-instance-1
+      DBInstanceClass: db.t4g.medium
+      Engine: aurora-postgresql
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+
+  AuroraInstance2:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceIdentifier: my-aurora-instance-2
+      Engine: aurora-postgresql
+      DBInstanceClass: db.t4g.medium
+      PubliclyAccessible: false
+
+  AuroraInstance3:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceIdentifier: my-aurora-instance-3
+      Engine: aurora-postgresql
+      DBInstanceClass: db.t4g.medium
+      PubliclyAccessible: false
+
+  # ?? ALB ???????????????????????????????????????????????????????????????????????
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub
+        - inventory-alb-${Suffix}
+        - Suffix: !Select
+            - 0
+            - !Split
+              - '-'
+              - !Select
+                - 2
+                - !Split
+                  - /
+                  - !Ref AWS::StackId
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub
+        - inventory-tg-${Suffix}
+        - Suffix: !Select
+            - 0
+            - !Split
+              - '-'
+              - !Select
+                - 2
+                - !Split
+                  - /
+                  - !Ref AWS::StackId
+      Port: !Ref AppPort
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: instance
+      HealthCheckPath: /api/products
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  # ?? Launch Template & ASG ?????????????????????????????????????????????????????
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub
+        - inventory-lt-${Suffix}
+        - Suffix: !Select
+            - 0
+            - !Split
+              - '-'
+              - !Select
+                - 2
+                - !Split
+                  - /
+                  - !Ref AWS::StackId
+      LaunchTemplateData:
+        ImageId: !FindInMap
+          - RegionMap
+          - !Ref AWS::Region
+          - ARM64
+        InstanceType: t4g.micro
+        IamInstanceProfile:
+          Arn: !GetAtt EC2InstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref AppSecurityGroup
+        UserData: !Base64
+          Fn::Sub: |
+            #!/bin/bash
+            cat /home/ec2-user/architecting/.env
+
+            TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+
+            AWS_REGION=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
+
+            echo "Region: $AWS_REGION"
+
+
+            if [ "$AWS_REGION" == "ap-southeast-1" ]; then
+                S3_BUCKET="inventory-images-e32294d0"
+                DB_HOST="lab17-auroracluster-yz8dszlvx5ac.cluster-cvi6ygywwao2.ap-southeast-1.rds.amazonaws.com"
+            else
+                S3_BUCKET="inventory-images-dr-e32294d0"
+                DB_HOST="lab17-pilot-demo-cluster-1.cluster-cpoomscim9dq.ap-northeast-1.rds.amazonaws.com"
+            fi
+
+            echo "AWS_REGION=$AWS_REGION" >> /home/ec2-user/architecting/.env
+
+            echo "S3_BUCKET=$S3_BUCKET" >> /home/ec2-user/architecting/.env
+
+            echo "DB_HOST=$DB_HOST" >> /home/ec2-user/architecting/.env
+
+            systemctl restart demo-app
+
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+      - NATGateway
+      - AuroraInstance
+    Properties:
+      AutoScalingGroupName: !Sub
+        - inventory-asg-${Suffix}
+        - Suffix: !Select
+            - 0
+            - !Split
+              - '-'
+              - !Select
+                - 2
+                - !Split
+                  - /
+                  - !Ref AWS::StackId
+      MinSize: '1'
+      MaxSize: '4'
+      DesiredCapacity: '2'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !Ref AppSubnetA
+        - !Ref AppSubnetB
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: inventory-app
+          PropagateAtLaunch: true
+
+Outputs:
+  ALBURL:
+    Description: Application URL
+    Value: !Sub http://${ALB.DNSName}
+
+  AuroraEndpoint:
+    Description: Aurora cluster endpoint
+    Value: !GetAtt AuroraCluster.Endpoint.Address
+
+  S3BucketName:
+    Description: S3 bucket for product images
+    Value: !Ref ImageBucket
