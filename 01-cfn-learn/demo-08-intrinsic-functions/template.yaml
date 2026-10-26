@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Demo 08 - Intrinsic functions (!Sub, !Join, !Select, !Base64, !FindInMap, !GetAtt)
+
+Parameters:
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+
+Mappings:
+  EnvConfig:
+    prod:
+      InstanceType: t4g.small
+    dev:
+      InstanceType: t4g.micro
+
+Resources:
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: !Sub 'SG for ${AWS::StackName}'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      # !FindInMap - lookup from Mappings
+      InstanceType: !FindInMap [EnvConfig, dev, InstanceType]
+      ImageId: !Ref AmiId
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref WebSecurityGroup
+      # !Base64 - encode user data string
+      UserData:
+        Fn::Base64:
+          # !Sub - string interpolation with ${Variable} - Substitute
+          !Sub |
+            #!/bin/bash
+            echo "Stack: ${AWS::StackName}" > /tmp/info.txt
+            echo "Region: ${AWS::Region}" >> /tmp/info.txt
+      Tags:
+        - Key: Name
+          # !Join - concatenate list with delimiter
+          Value: !Join ['-', [demo, '08', ec2]]
+        - Key: Info
+          # !Select - pick item from list by index
+          Value: !Select [0, [primary, secondary, tertiary]]
+
+Outputs:
+  # !GetAtt - get specific attribute of a resource
+  PrivateIp:
+    Value: !GetAtt WebServer.PrivateIp
+  PublicIp:
+    Value: !GetAtt WebServer.PublicIp

@@ -1,0 +1,8 @@
+Resources:
+  DummyBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: lamtq-demo-00
+      Tags:
+        - Key: Purpose
+          Value: demo bucket name

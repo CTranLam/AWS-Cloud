@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Demo 03 - SSM Parameter Store to resolve the latest Amazon Linux 2023 ARM AMI automatically
+
+Parameters:
+  # AWS::SSM::Parameter::Value<AWS::EC2::Image::Id> resolves the SSM path at deploy time
+  # No need to look up or hardcode AMI IDs — always gets the latest for the current region
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
+  InstanceType:
+    Type: String
+    AllowedValues:
+      - t4g.micro
+      - t4g.small
+      - c7g.xlarge
+      - c7g.2xlarge
+    Description: Select an EC2 instance type for your stack.
+    Default: t4g.small
+
+Resources:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      Tags:
+        - Key: Name
+          Value: demo-03-ssm-ami

@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Demo 12 - Drift Detection (deploy, manually change a resource, then detect drift)
+
+Resources:
+  DemoBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: Name
+          Value: demo-12-drift
+        - Key: ManagedBy
+          Value: CloudFormation   # manually remove this tag in console to create drift
+
+  WebSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Demo SG for drift detection
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0     # manually add port 22 in console to create drift
+
+Outputs:
+  BucketName:
+    Value: !Ref DemoBucket
+  SecurityGroupId:
+    Value: !Ref WebSG

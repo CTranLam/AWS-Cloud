@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Demo 02 - Enter an AMI ID manually as a parameter (AWS::EC2::Image::Id validates it exists)
+
+Parameters:
+  # AWS::EC2::Image::Id type validates the AMI exists in the current region at deploy time
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: Enter a valid AMI ID for your region (e.g. ami-0abcdef1234567890)
+
+  InstanceType:
+    Type: String
+    Default: t4g.micro
+
+Resources:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      Tags:
+        - Key: Name
+          Value: demo-02-ec2

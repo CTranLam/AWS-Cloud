@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Demo 09 - Conditions to toggle resources and values by environment
+
+Parameters:
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+  IsDev: !Not [!Equals [!Ref Environment, prod]]
+
+Resources:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      SubnetId: !Ref SubnetId
+      # !If [ConditionName, ValueIfTrue, ValueIfFalse]
+      InstanceType: !If [IsProd, t4g.small, t4g.micro]
+      Tags:
+        - Key: Name
+          Value: !Sub 'demo-09-${Environment}'
+        - !If
+            - IsProd
+            - Key: backup
+              Value: enabled
+            - !Ref AWS::NoValue
+
+  # NAT Gateway only created in prod
+  NatEIP:
+    Type: AWS::EC2::EIP
+    Condition: IsProd
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Condition: IsProd
+    Properties:
+      SubnetId: !Ref SubnetId
+      AllocationId: !GetAtt NatEIP.AllocationId
+
+Outputs:
+  InstanceType:
+    Value: !If [IsProd, t4g.small, t4g.micro]
+  NatGatewayId:
+    Condition: IsProd
+    Value: !Ref NatGateway
