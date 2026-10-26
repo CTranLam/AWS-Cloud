@@ -1,0 +1,235 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: App Layer - NAT Gateway, ALB, ASG, Launch Template (requires network stack)
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Description: Name of the network stack (network-stack) to import values from
+    Default: network-stack
+  DBHost:
+    Type: String
+    Description: Aurora cluster endpoint (MANDATORY)
+  S3BucketName:
+    Type: String
+    Description: Existing S3 bucket name for product images (MANDATORY)
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Default: demoPassword
+  DBUsername:
+    Type: String
+    Default: dbadmin
+  DBName:
+    Type: String
+    Default: demo
+  AppPort:
+    Type: Number
+    Default: 3001
+  GitRepo:
+    Type: String
+    Default: https://github.com/vietaws/architecting.git
+  GitBranch:
+    Type: String
+    Default: lab17-dr
+
+Resources:
+
+  # ── NAT Gateway ───────────────────────────────────────────────────────────────
+  NATEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NATEIP.AllocationId
+      SubnetId: !ImportValue
+        Fn::Sub: ${NetworkStackName}-PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: inventory-nat
+
+  NATRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !ImportValue
+        Fn::Sub: ${NetworkStackName}-PrivateRTId
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+
+  # ── IAM Role for EC2 ──────────────────────────────────────────────────────────
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub
+        - inventory-ec2-role-${Suffix}
+        - Suffix: !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: S3ImageAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub arn:aws:s3:::${S3BucketName}/products/*
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  # ── ALB ───────────────────────────────────────────────────────────────────────
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub
+        - inventory-alb-${Suffix}
+        - Suffix: !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      Scheme: internet-facing
+      Subnets:
+        - !ImportValue
+          Fn::Sub: ${NetworkStackName}-PublicSubnetA
+        - !ImportValue
+          Fn::Sub: ${NetworkStackName}-PublicSubnetB
+      SecurityGroups:
+        - !ImportValue
+          Fn::Sub: ${NetworkStackName}-ALBSecurityGroup
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub
+        - inventory-tg-${Suffix}
+        - Suffix: !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      Port: !Ref AppPort
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: ${NetworkStackName}-VPCId
+      TargetType: instance
+      HealthCheckPath: /api/products
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  # ── Launch Template & ASG ─────────────────────────────────────────────────────
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub
+        - inventory-lt-${Suffix}
+        - Suffix: !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      LaunchTemplateData:
+        ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}'
+        InstanceType: t4g.micro
+        IamInstanceProfile:
+          Arn: !GetAtt EC2InstanceProfile.Arn
+        SecurityGroupIds:
+          - !ImportValue
+            Fn::Sub: ${NetworkStackName}-AppSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            exec > >(tee /var/log/userdata.log) 2>&1
+
+            # Install dependencies
+            dnf update -y
+            dnf install -y git postgresql16
+            dnf module enable -y nodejs:22 || true
+            dnf install -y nodejs
+
+            # Clone app
+            cd /home/ec2-user
+            git clone -b ${GitBranch} ${GitRepo} architecting
+            cd architecting
+            npm install
+
+            # Write env file
+            printf 'DB_HOST=%s\nDB_PORT=5432\nDB_USER=%s\nDB_PASSWORD=%s\nPORT=%s\nS3_BUCKET=%s\nAWS_REGION=%s\n' \
+              "${DBHost}" \
+              "${DBUsername}" \
+              "${DBPassword}" \
+              "${AppPort}" \
+              "${S3BucketName}" \
+              "${AWS::Region}" \
+              > /home/ec2-user/architecting/.env
+
+            chown -R ec2-user:ec2-user /home/ec2-user/architecting
+
+            # Create systemd service
+            printf '[Unit]\nDescription=Inventory Management Application\nAfter=network.target\n\n[Service]\nType=simple\nUser=ec2-user\nWorkingDirectory=/home/ec2-user/architecting\nEnvironmentFile=/home/ec2-user/architecting/.env\nExecStart=/usr/bin/node server.js\nRestart=always\nRestartSec=10\nStandardOutput=journal\nStandardError=journal\nSyslogIdentifier=demo-app\n\n[Install]\nWantedBy=multi-user.target\n' \
+              > /etc/systemd/system/demo-app.service
+
+            systemctl daemon-reload
+            systemctl enable demo-app
+            systemctl start demo-app
+
+            # ── DB init ───────────────────────────────────────────────────────
+            export PGPASSWORD="${DBPassword}"
+            DB_HOST="${DBHost}"
+            DB_USER="${DBUsername}"
+            DB_NAME="${DBName}"
+
+            for i in $(seq 1 20); do
+              psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1" > /dev/null 2>&1 && break
+              echo "Waiting for DB... attempt $i"
+              sleep 15
+            done
+
+            psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" \
+              -c "CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL, qty INTEGER NOT NULL DEFAULT 0, image_url VARCHAR(1024));"
+
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: NATGateway
+    Properties:
+      AutoScalingGroupName: !Sub
+        - inventory-asg-${Suffix}
+        - Suffix: !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      MinSize: '1'
+      MaxSize: '4'
+      DesiredCapacity: '2'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !ImportValue
+          Fn::Sub: ${NetworkStackName}-AppSubnetA
+        - !ImportValue
+          Fn::Sub: ${NetworkStackName}-AppSubnetB
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: inventory-app
+          PropagateAtLaunch: true
+
+Outputs:
+  ALBURL:
+    Description: Application URL
+    Value: !Sub http://${ALB.DNSName}
