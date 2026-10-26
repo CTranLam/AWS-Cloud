@@ -1,0 +1,23 @@
+{
+  "name": "architecting",
+  "version": "1.0.0",
+  "description": "aws architecting course - viet tran",
+  "homepage": "https://github.com/vietaws/architecting#readme",
+  "bugs": {
+    "url": "https://github.com/vietaws/architecting/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vietaws/architecting.git"
+  },
+  "license": "ISC",
+  "author": "hello@viet.vn",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.1027.0"
+  }
+}
