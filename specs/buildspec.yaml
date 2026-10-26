@@ -1,0 +1,29 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+    commands:
+            - echo "installing node js modules..."
+  pre_build:
+        commands: 
+            - echo "we are in the pre build phase"
+  build:
+    commands:
+      - echo "we are in the build block"
+      - echo "Running tests..."
+      - cd app && npm install && npm test --if-present
+      - grep -Fq "Hello" index.js && echo "Test passed!" || (echo "Test failed!" && exit 1)
+  post_build:
+    commands:
+      - cd .. && mv specs/appspec.yaml ./appspec.yml  # move appspec.yaml to the root for packaging
+      - echo "Build complete"
+
+artifacts:
+  files:
+    - app/**/*
+    - scripts/**/*
+    - appspec.yml
+  name: my-artifact-$(date +%Y-%m-%d-%H-%M-%S).zip
+  discard-paths: no

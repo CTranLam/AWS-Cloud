@@ -1,0 +1,49 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_ACCOUNT_ID: "274595021951"       # replace with your account ID
+    AWS_REGION: "ap-southeast-1"         # replace with your region
+    ECR_REPO: "public/lab14-demo"      # replace with your ECR repo name
+    CONTAINER_NAME: "example" # must match container name in task definition
+    DOCKER_BUILDKIT: "1" # Enable BuildKit for better performance and multi-platform builds
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to ECR...
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-8)
+      - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+      - docker buildx create --use --name mybuilder 
+  build:
+    commands:
+      - echo Building Docker image...
+      - cd app/
+      - ls -la
+      - rm -f index-base.js
+      - mv index-ecs.js index.js
+      - mv package-ecs.json package.json
+      - ls -la
+      - echo Check docker buildx version and build image for multiple platforms...
+      - docker buildx version
+      - docker buildx build --platform linux/amd64,linux/arm64 -t $IMAGE_URI --push .  
+  post_build:
+    commands:
+      - echo Build completed. Image URI
+      - echo $IMAGE_URI
+      - printf '{"ImageURI":"%s"}' $IMAGE_URI > imageDetail.json
+      - cat imageDetail.json
+      - pwd
+      - ls -la
+      - echo Moving imageDetail.json to $CODEBUILD_SRC_DIR for CodePipeline...
+      - mv imageDetail.json $CODEBUILD_SRC_DIR/imageDetail.json
+      - echo Moving appspec-ecs and taskdef to root folder for CodePipeline...
+      - mv ../specs/appspec-ecs.yaml $CODEBUILD_SRC_DIR/appspec.yml
+      - mv ../specs/taskdef-ecs.json $CODEBUILD_SRC_DIR/taskdef.json
+      - ls -la $CODEBUILD_SRC_DIR
+artifacts:
+  files: 
+   - imageDetail.json
+   - appspec.yml
+   - taskdef.json

@@ -1,0 +1,32 @@
+version: 0.0
+os: linux
+
+files:
+  - source: app/
+    destination: /home/ec2-user/architecting/app
+file_exists_behavior: OVERWRITE
+
+hooks:
+  ApplicationStop:
+    - location: scripts/1-stop_server.sh
+      timeout: 30
+      runas: root
+  BeforeInstall:
+    - location: scripts/2-before_install.sh
+      timeout: 300
+      runas: root
+
+  AfterInstall:
+    - location: scripts/3-after_install.sh
+      timeout: 120
+      runas: root
+
+  ApplicationStart:
+    - location: scripts/4-start_server.sh
+      timeout: 30
+      runas: root
+  
+  ValidateService:
+    - location: scripts/5-validate_service.sh
+      timeout: 300
+      runas: root
