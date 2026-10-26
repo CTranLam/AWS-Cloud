@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Miracle AI Assistant</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="chat-container">
+    <header class="chat-header">
+      <span class="header-dot"></span>
+      <span>Miracle AI Assistant</span>
+      <label class="model-select">
+        <span class="model-label">Model</span>
+        <select id="model">
+          <option value="apac.amazon.nova-lite-v1:0" selected>Amazon Nova Lite</option>
+          <option value="global.anthropic.claude-haiku-4-5-20251001-v1:0">Claude Haiku 4.5</option>
+          <option value="global.anthropic.claude-sonnet-4-5-20250929-v1:0">Claude Sonnet 4.5</option>
+        </select>
+      </label>
+    </header>
+
+    <div class="messages" id="messages">
+      <div class="message assistant">
+        <div class="bubble">Hi! Ask me anything about Miracle Technologies. Pick a model above to compare cost, speed, and quality.</div>
+      </div>
+    </div>
+
+    <!-- Per-query learning metrics -->
+    <section class="metrics" id="metrics" aria-live="polite" hidden>
+      <div class="metrics-title">Last query metrics</div>
+      <div class="metrics-grid">
+        <div class="metric"><span class="m-label">Model</span><span class="m-value" id="m-model">—</span></div>
+        <div class="metric"><span class="m-label">Region</span><span class="m-value" id="m-region">—</span></div>
+        <div class="metric"><span class="m-label">Input tokens</span><span class="m-value" id="m-in">—</span></div>
+        <div class="metric"><span class="m-label">Output tokens</span><span class="m-value" id="m-out">—</span></div>
+        <div class="metric"><span class="m-label">Total tokens</span><span class="m-value" id="m-total">—</span></div>
+        <div class="metric"><span class="m-label">Est. cost (USD)</span><span class="m-value" id="m-cost">—</span></div>
+        <div class="metric"><span class="m-label">Latency (ms)</span><span class="m-value" id="m-latency">—</span></div>
+        <div class="metric"><span class="m-label">Tokens/sec</span><span class="m-value" id="m-tps">—</span></div>
+        <div class="metric"><span class="m-label">Chunks</span><span class="m-value" id="m-chunks">—</span></div>
+        <div class="metric wide"><span class="m-label">Top scores</span><span class="m-value" id="m-scores">—</span></div>
+      </div>
+    </section>
+
+    <form class="input-bar" id="form">
+      <input
+        type="text"
+        id="input"
+        placeholder="Ask a question…"
+        autocomplete="off"
+        required
+      />
+      <button type="submit" id="send-btn" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </form>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
