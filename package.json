@@ -1,0 +1,8 @@
+{
+  "name": "image-upload-s3-direct",
+  "version": "1.0.0",
+  "description": "Static website on S3 with direct browser upload using AWS SDK and Cognito",
+  "scripts": {
+    "deploy": "./deploy.sh"
+  }
+}

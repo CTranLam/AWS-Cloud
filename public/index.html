@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Upload - S3 Storage</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+    .header {
+      background: #f8f9fa;
+      padding: 30px;
+      text-align: center;
+    }
+    h1 { color: #333; font-size: 2rem; margin-bottom: 15px; }
+    .metadata {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      font-size: 0.9rem;
+      color: #666;
+    }
+    .metadata span { background: white; padding: 8px 16px; border-radius: 6px; }
+    .content { padding: 40px; }
+    .form {
+      display: grid;
+      gap: 15px;
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+    input[type="file"] {
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+    button {
+      padding: 12px 24px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover { background: #5568d3; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .images { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
+    .image-card {
+      background: #f8f9fa;
+      border-radius: 8px;
+      overflow: hidden;
+      transition: transform 0.2s;
+    }
+    .image-card:hover { transform: translateY(-4px); }
+    .image-card img {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+    }
+    .image-info { padding: 12px; }
+    .image-info p {
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+    .delete-btn {
+      width: 100%;
+      padding: 8px;
+      background: #dc3545;
+      font-size: 0.9rem;
+    }
+    .delete-btn:hover { background: #c82333; }
+    .error { color: #dc3545; padding: 10px; background: #f8d7da; border-radius: 6px; margin-bottom: 15px; }
+    @media (max-width: 600px) {
+      .container { border-radius: 0; }
+      .header { padding: 20px; }
+      h1 { font-size: 1.5rem; }
+      .metadata { flex-direction: column; gap: 10px; }
+      .content { padding: 20px; }
+      .images { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Image Upload - S3 Storage</h1>
+      <div class="metadata">
+        <span>Region: <strong id="region">REGION</strong></span>
+        <span>Bucket: <strong id="bucket">BUCKET_NAME</strong></span>
+      </div>
+    </div>
+    <div class="content">
+      <div id="error" class="error" style="display:none;"></div>
+      <div class="form">
+        <input type="file" id="imageFile" accept="image/*">
+        <button id="uploadBtn" onclick="uploadImage()">Upload to S3</button>
+      </div>
+      <div class="images" id="imagesList"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from 'https://cdn.jsdelivr.net/npm/@aws-sdk/client-s3@3.515.0/+esm';
+    import { fromCognitoIdentityPool } from 'https://cdn.jsdelivr.net/npm/@aws-sdk/credential-providers@3.515.0/+esm';
+
+    const REGION = 'REGION';
+    const BUCKET_NAME = 'BUCKET_NAME';
+    const IDENTITY_POOL_ID = 'IDENTITY_POOL_ID';
+
+    const s3Client = new S3Client({
+      region: REGION,
+      credentials: fromCognitoIdentityPool({
+        clientConfig: { region: REGION },
+        identityPoolId: IDENTITY_POOL_ID
+      })
+    });
+
+    function showError(msg) {
+      const errorDiv = document.getElementById('error');
+      errorDiv.textContent = msg;
+      errorDiv.style.display = 'block';
+      setTimeout(() => errorDiv.style.display = 'none', 5000);
+    }
+
+    document.getElementById('region').textContent = REGION;
+    document.getElementById('bucket').textContent = BUCKET_NAME;
+
+    async function loadImages() {
+      try {
+        const command = new ListObjectsV2Command({ Bucket: BUCKET_NAME, Prefix: 'data/' });
+        const data = await s3Client.send(command);
+        
+        const images = (data.Contents || [])
+          .filter(obj => obj.Key !== 'data/' && /\.(jpg|jpeg|png|gif|webp)$/i.test(obj.Key))
+          .map(obj => ({
+            name: obj.Key,
+            size: obj.Size,
+            uploaded: obj.LastModified,
+            url: `https://${BUCKET_NAME}.s3.${REGION}.amazonaws.com/${obj.Key}`
+          }))
+          .sort((a, b) => new Date(b.uploaded) - new Date(a.uploaded));
+
+        document.getElementById('imagesList').innerHTML = images.map(img => `
+          <div class="image-card">
+            <img src="${img.url}" alt="${img.name}">
+            <div class="image-info">
+              <p><strong>${img.name.replace('data/', '')}</strong></p>
+              <p>${(img.size / 1024).toFixed(1)} KB</p>
+              <button class="delete-btn" onclick="deleteImage('${img.name}')">Delete</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        showError('Failed to load images: ' + err.message);
+      }
+    }
+
+    window.uploadImage = async function() {
+      const file = document.getElementById('imageFile').files[0];
+      if (!file) return showError('Please select an image');
+      
+      const btn = document.getElementById('uploadBtn');
+      btn.disabled = true;
+      btn.textContent = 'Uploading...';
+      
+      try {
+        const key = `data/${Date.now()}-${file.name}`;
+        const command = new PutObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: key,
+          Body: file,
+          ContentType: file.type
+        });
+        
+        await s3Client.send(command);
+        document.getElementById('imageFile').value = '';
+        loadImages();
+      } catch (err) {
+        showError('Upload failed: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Upload to S3';
+      }
+    };
+
+    window.deleteImage = async function(key) {
+      if (!confirm('Delete this image?')) return;
+      
+      try {
+        const command = new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+        await s3Client.send(command);
+        loadImages();
+      } catch (err) {
+        showError('Delete failed: ' + err.message);
+      }
+    };
+
+    loadImages();
+  </script>
+</body>
+</html>
