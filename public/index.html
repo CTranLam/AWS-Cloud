@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Products Management</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 15px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 30px 20px;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 25px;
+      text-align: center;
+      font-size: clamp(1.5rem, 5vw, 2rem);
+    }
+    .form {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr auto;
+      gap: 12px;
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+    input {
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border 0.3s;
+      width: 100%;
+    }
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    button {
+      padding: 12px 24px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.3s;
+      white-space: nowrap;
+    }
+    button:hover { background: #5568d3; }
+    .products {
+      display: grid;
+      gap: 12px;
+    }
+    .product {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      transition: transform 0.2s;
+    }
+    .product:hover { transform: translateY(-2px); }
+    .product-name { 
+      font-weight: 600; 
+      color: #333;
+      word-break: break-word;
+    }
+    .product-price { 
+      color: #28a745; 
+      font-weight: 500; 
+    }
+    .product-quantity { 
+      color: #666; 
+    }
+    .delete-btn {
+      padding: 8px 16px;
+      background: #dc3545;
+      font-size: 0.9rem;
+    }
+    .delete-btn:hover { background: #c82333; }
+    
+    @media (max-width: 768px) {
+      body { padding: 10px; }
+      .container { 
+        padding: 20px 15px;
+        border-radius: 12px;
+      }
+      .form {
+        grid-template-columns: 1fr;
+        padding: 15px;
+        gap: 10px;
+      }
+      button { width: 100%; }
+      .product {
+        grid-template-columns: 1fr;
+        padding: 15px;
+        gap: 8px;
+      }
+      .product-name { font-size: 1.1rem; }
+      .product-price, .product-quantity { font-size: 0.95rem; }
+    }
+    
+    @media (max-width: 480px) {
+      .container { padding: 15px 10px; }
+      .form { padding: 12px; }
+      input { padding: 10px; font-size: 0.95rem; }
+      button { padding: 10px 20px; font-size: 0.95rem; }
+      .product { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Products Management</h1>
+    <div class="form">
+      <input type="text" id="name" placeholder="Product Name" required>
+      <input type="number" id="price" placeholder="Price" step="0.01" required>
+      <input type="number" id="quantity" placeholder="Quantity" required>
+      <button onclick="addProduct()">Add Product</button>
+    </div>
+    <div class="products" id="products"></div>
+  </div>
+
+  <script>
+    async function loadProducts() {
+      const res = await fetch('/api/products');
+      const products = await res.json();
+      document.getElementById('products').innerHTML = products.map(p => `
+        <div class="product">
+          <div class="product-name">${p.name}</div>
+          <div class="product-price">$${parseFloat(p.price).toFixed(2)}</div>
+          <div class="product-quantity">Qty: ${p.quantity}</div>
+          <button class="delete-btn" onclick="deleteProduct(${p.id})">Delete</button>
+        </div>
+      `).join('');
+    }
+
+    async function addProduct() {
+      const name = document.getElementById('name').value;
+      const price = document.getElementById('price').value;
+      const quantity = document.getElementById('quantity').value;
+      if (!name || !price || !quantity) return;
+      
+      await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, price, quantity })
+      });
+      
+      document.getElementById('name').value = '';
+      document.getElementById('price').value = '';
+      document.getElementById('quantity').value = '';
+      loadProducts();
+    }
+
+    async function deleteProduct(id) {
+      await fetch(`/api/products/${id}`, { method: 'DELETE' });
+      loadProducts();
+    }
+
+    loadProducts();
+  </script>
+</body>
+</html>
