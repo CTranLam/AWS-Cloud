@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Todo App</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📝 Todo App</h1>
+            <nav>
+                <button class="tab active" data-tab="all" onclick="filterTodos('all', this)">All</button>
+                <button class="tab" data-tab="pending" onclick="filterTodos('pending', this)">Pending</button>
+                <button class="tab" data-tab="completed" onclick="filterTodos('completed', this)">Completed</button>
+            </nav>
+        </header>
+
+        <main class="tab-content active" style="padding:30px;">
+            <div class="actions">
+                <button class="btn-primary" onclick="showForm()">+ Add Todo</button>
+            </div>
+
+            <div id="todo-form" class="form-card hidden">
+                <h3 id="form-title">Add Todo</h3>
+                <input type="hidden" id="todo-id">
+                <input type="text" id="todo-name" placeholder="Todo name" required>
+                <input type="date" id="todo-date" placeholder="Due date">
+                <select id="todo-status" class="hidden" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #e0e0e0;border-radius:8px;font-size:14px;">
+                    <option value="pending">Pending</option>
+                    <option value="completed">Completed</option>
+                </select>
+                <div class="form-actions">
+                    <button class="btn-primary" onclick="saveTodo()">Save</button>
+                    <button class="btn-secondary" onclick="hideForm()">Cancel</button>
+                </div>
+            </div>
+
+            <div id="todos-list" class="list"></div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
