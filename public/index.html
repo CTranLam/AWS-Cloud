@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory Management</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 40px;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 30px;
+      text-align: center;
+      font-size: 2rem;
+    }
+    .form {
+      display: grid;
+      gap: 15px;
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+    input {
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border 0.3s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    button {
+      padding: 12px 24px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover { background: #5568d3; }
+    .products {
+      display: grid;
+      gap: 15px;
+    }
+    .product {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      transition: transform 0.2s;
+    }
+    .product:hover { transform: translateY(-2px); }
+    .product-info h3 { color: #333; margin-bottom: 5px; }
+    .product-info p { color: #666; }
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+    .edit-btn {
+      padding: 8px 16px;
+      background: #28a745;
+      font-size: 0.9rem;
+    }
+    .edit-btn:hover { background: #218838; }
+    .delete-btn {
+      padding: 8px 16px;
+      background: #dc3545;
+      font-size: 0.9rem;
+    }
+    .delete-btn:hover { background: #c82333; }
+    @media (max-width: 600px) {
+      .container { padding: 20px; }
+      h1 { font-size: 1.5rem; }
+      .product { flex-direction: column; gap: 10px; }
+      .actions { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Inventory Management</h1>
+    <div class="form">
+      <input type="text" id="name" placeholder="Product Name" required>
+      <input type="number" id="qty" placeholder="Quantity" required min="0">
+      <button id="submitBtn" onclick="addProduct()">Add Product</button>
+    </div>
+    <div class="products" id="products"></div>
+  </div>
+
+  <script>
+    let editingId = null;
+
+    async function loadProducts() {
+      const res = await fetch('/api/products');
+      const products = await res.json();
+      document.getElementById('products').innerHTML = products.map(p => `
+        <div class="product">
+          <div class="product-info">
+            <h3>${p.name}</h3>
+            <p>Quantity: ${p.qty}</p>
+          </div>
+          <div class="actions">
+            <button class="edit-btn" onclick="editProduct(${p.id}, '${p.name}', ${p.qty})">Edit</button>
+            <button class="delete-btn" onclick="deleteProduct(${p.id})">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function addProduct() {
+      const name = document.getElementById('name').value;
+      const qty = document.getElementById('qty').value;
+      if (!name || !qty) return alert('Please fill all fields');
+
+      if (editingId) {
+        await fetch(`/api/products/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, qty: parseInt(qty) })
+        });
+        editingId = null;
+        document.getElementById('submitBtn').textContent = 'Add Product';
+      } else {
+        await fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, qty: parseInt(qty) })
+        });
+      }
+
+      document.getElementById('name').value = '';
+      document.getElementById('qty').value = '';
+      loadProducts();
+    }
+
+    function editProduct(id, name, qty) {
+      editingId = id;
+      document.getElementById('name').value = name;
+      document.getElementById('qty').value = qty;
+      document.getElementById('submitBtn').textContent = 'Update Product';
+    }
+
+    async function deleteProduct(id) {
+      if (!confirm('Delete this product?')) return;
+      await fetch(`/api/products/${id}`, { method: 'DELETE' });
+      loadProducts();
+    }
+
+    loadProducts();
+  </script>
+</body>
+</html>
