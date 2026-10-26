@@ -1,0 +1,13 @@
+
+# MANDATORY - the only required section
+Resources:
+  # Every resource needs a LogicalId, Type, and Properties
+  DummyBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: vietaws-2031
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Purpose
+          Value: demo bucket name

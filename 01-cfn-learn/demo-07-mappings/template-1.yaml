@@ -1,0 +1,21 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Demo 07 - Mappings for region-based AMI lookup
+
+# Static lookup table: no runtime input needed
+Mappings:
+  RegionAMI:
+    us-east-1:
+      AmazonLinux2023: ami-088cedaa951dcc6a5
+    ap-southeast-1:
+      AmazonLinux2023: ami-00835124e2236f36f
+
+Resources:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t4g.micro
+      # !FindInMap [MapName, TopKey, SecondKey]
+      ImageId: !FindInMap [RegionAMI, !Ref AWS::Region, AmazonLinux2023]
+      Tags:
+        - Key: Name
+          Value: demo-07-ec2

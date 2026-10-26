@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Demo 10b - cfn-hup: automatically re-runs cfn-init when stack Metadata changes.
+  Step 1: Deploy this stack — page shows "Hello from cfn-init".
+  Step 2: Run `aws cloudformation update-stack` with the updated Metadata (change index.html content).
+  Step 3: cfn-hup detects the Metadata change and re-runs cfn-init — page updates without replacing the instance.
+
+Parameters:
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+
+  WebSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Allow HTTP
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t4g.micro
+      ImageId: !Ref AmiId
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds: [!Ref WebSG]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update and install Apache web server
+          dnf update -y
+          dnf install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          # Create a simple website page
+          echo "<html><body><h1>Welcome to my CloudFormation! This is an update!</h1></body></html>" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: demo-10-cfn-hup
+
+Outputs:
+  PublicIp:
+    Value: !GetAtt WebServer.PublicIp
+    Description: Open in browser to see the page — update Metadata to trigger cfn-hup

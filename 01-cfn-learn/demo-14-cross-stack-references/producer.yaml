@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Demo 14 - Cross-Stack References (producer) - creates VPC and exports values
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: demo-14-vpc
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: demo-14-public-subnet
+
+Outputs:
+  VpcId:
+    Value: !Ref VPC
+    # Export makes this value importable by other stacks
+    Export:
+      Name: Demo14-VpcId
+
+  SubnetId:
+    Value: !Ref PublicSubnet
+    Export:
+      Name: Demo14-SubnetId

@@ -1,0 +1,21 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Demo 05 - Pseudo parameters (no declaration needed)
+
+Resources:
+  # AWS::AccountId, AWS::Region, AWS::StackName are always available
+  DemoBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # !Sub interpolates ${Variable} — builds a unique bucket name
+      BucketName: !Sub 'demo-05-${AWS::AccountId}-${AWS::Region}'
+      Tags:
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: StackId
+          Value: !Ref AWS::StackId
+        - Key: Region
+          Value: !Ref AWS::Region
+
+Outputs:
+  BucketName:
+    Value: !Ref DemoBucket

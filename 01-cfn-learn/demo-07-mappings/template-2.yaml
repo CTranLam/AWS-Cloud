@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Using Mappings to choose EC2 instance type'
+
+Parameters:
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+  EnvType:
+    Description: 'Choose env'
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - test
+      - prod
+
+Mappings:
+  EnvironmentConfig:
+    dev:
+      InstanceType: t4g.micro
+      VolumeType: gp3
+      VolumeSize: '8'
+    test:
+      InstanceType: t4g.small
+      VolumeType: gp3
+      VolumeSize: '10'
+    prod:
+      InstanceType: t4g.medium
+      VolumeType: gp3
+      VolumeSize: '15'
+
+Resources:
+  MyEC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !FindInMap [EnvironmentConfig, !Ref EnvType, InstanceType]
+      ImageId: !Ref AmiId
+      Tags:
+        - Key: Name
+          Value: !Sub "Server-${EnvType}"
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            # Lấy VolumeSize và VolumeType từ Mapping
+            VolumeSize: !FindInMap [EnvironmentConfig, !Ref EnvType, VolumeSize]
+            VolumeType: !FindInMap [EnvironmentConfig, !Ref EnvType, VolumeType]
+
+Outputs:
+  InstanceInfo:
+    Description: "Thông tin Server đã tạo"
+    Value: !Sub "Environment: ${EnvType}, Type: ${MyEC2Instance.InstanceType}"

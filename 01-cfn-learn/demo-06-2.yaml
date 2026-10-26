@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Demo 06 - Outputs to expose resource values
+
+Parameters:
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+  InstanceType:
+    Type: String
+    Default: t4g.micro
+    Description: EC2 instance type
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: VPC CIDR
+  Subnet1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+
+Resources:
+  MyVpc:
+      Type: AWS::EC2::VPC
+      Properties:
+        CidrBlock: !Ref VpcCidr
+        Tags:
+          - Key: Name
+            Value: My CFN VPC
+  MyInternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MyIGW-CFN
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref MyVpc
+      InternetGatewayId: !Ref MyInternetGateway
+  
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref MyVpc
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable-CFN-Demo
+
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MyInternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref MySubnet
+      RouteTableId: !Ref PublicRouteTable
+  
+  MySubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVpc
+      CidrBlock: !Ref Subnet1Cidr
+      Tags:
+        - Key: Name
+          Value: My CFN Subnet
+  # !Ref on a resource returns its physical ID (e.g. sg-xxxxxxxx)
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref MyVpc                 # !Ref on parameter → its value
+      GroupDescription: Allow HTTP
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  WebServer2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId               # !Ref on parameter → its value
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update and install Apache web server
+          dnf update -y
+          dnf install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          # Create a simple website page
+          echo "<html><body><h1>Welcome to my CloudFormation Simple Website from ${AWS::Region}!</h1></body></html>" > /var/www/html/index.html
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: '0'
+          SubnetId: !Ref MySubnet
+          GroupSet:
+            - !Ref WebSecurityGroup     # !Ref on resource → physical ID    
+
+Outputs:
+  InstanceId:
+    Description: EC2 instance ID
+    Value: !Ref WebServer2
+
+  PublicIpAddress:
+    Description: Public IP of the EC2 instance
+    # !GetAtt retrieves a specific attribute — not available via !Ref
+    Value: !GetAtt WebServer2.PublicIp
+
+  SecurityGroupId:
+    Description: Security group ID
+    Value: !Ref WebSecurityGroup
