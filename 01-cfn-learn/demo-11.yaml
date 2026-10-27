@@ -1,0 +1,23 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Demo 11 - Change Sets (deploy this, modify it, then create a change set)
+
+Parameters:
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
+Resources:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t4g.small # <-- change this to t4g.small to demo a change set
+      ImageId: !Ref AmiId
+      Tags:
+        - Key: Name
+          Value: demo-11-ec2
+        - Key: Version
+          Value: v2 # <-- change this to v2 to demo a non-replacement change
+
+Outputs:
+  InstanceId:
+    Value: !Ref WebServer
