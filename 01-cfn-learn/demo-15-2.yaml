@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Demo 15 - Nested Stacks (ec2 child) - EC2 using network outputs as parameters
+
+Parameters:
+  AmiId:
+    Type: String
+  InstanceType:
+    Type: String
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+  WebSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Allow HTTP
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds: [!Ref WebSG]
+      Tags:
+        - Key: Name
+          Value: demo-15-ec2
+
+Outputs:
+  InstanceId:
+    Value: !Ref WebServer
+  PublicIp:
+    Value: !GetAtt WebServer.PublicIp
